@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+type Stub string
+
+type Lister interface {
+	List() ([]*Stub, error)
+}
+
+func importProcessSTubList(restClient Lister, resourceName string, targetFolder string) {
+
+}
+
 type Assert interface {
 	Errorf(format string, args ...any)
 	Fail()
@@ -81,8 +91,10 @@ func equals(expected interface{}, actual interface{}) string {
 	switch kind := tExpected.Kind(); kind {
 	case reflect.Slice, reflect.Array:
 		return sliceEquals(reflect.ValueOf(expected), reflect.ValueOf(actual))
+	case reflect.Map:
+		return reflectMapEquals(expected, actual)
 	default:
-		if expected != actual {
+		if !reflect.DeepEqual(expected, actual) {
 			return fmt.Sprintf("expected: %v, actual: %v", expected, actual)
 		}
 	}
@@ -116,6 +128,37 @@ func sliceEquals(vExpected reflect.Value, vActual reflect.Value) string {
 		}
 		if res := equals(elemExpected.Interface(), elemActual.Interface()); res != "" {
 			return fmt.Sprintf("[%d] expected: %v, actual: %v", idx, elemExpected.Interface(), elemActual.Interface())
+		}
+	}
+	return ""
+}
+
+func reflectMapEquals(expected interface{}, actual interface{}) string {
+	if expected == nil {
+		if actual == nil {
+			return ""
+		}
+		return "should be nil"
+	} else if actual == nil {
+		return "should not be nil"
+	}
+	vExpected := reflect.ValueOf(expected)
+	vActual := reflect.ValueOf(actual)
+	for _, k := range vExpected.MapKeys() {
+		ve := vExpected.MapIndex(k)
+		va := vActual.MapIndex(k)
+		if !va.IsZero() {
+			if res := equals(ve.Interface(), va.Interface()); res != "" {
+				return fmt.Sprintf("[\"%v\"] %s", k.Interface(), res)
+			}
+		} else {
+			return fmt.Sprintf("[\"%v\"] not found>", k.Interface())
+		}
+	}
+	for _, k := range vActual.MapKeys() {
+		ve := vExpected.MapIndex(k)
+		if ve.IsZero() {
+			return fmt.Sprintf("[\"%v\"] shouldn't exist", k.Interface())
 		}
 	}
 	return ""
