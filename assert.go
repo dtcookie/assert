@@ -4,17 +4,10 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
-
-type Stub string
-
-type Lister interface {
-	List() ([]*Stub, error)
-}
-
-func importProcessSTubList(restClient Lister, resourceName string, targetFolder string) {
-
-}
 
 type Assert interface {
 	Errorf(format string, args ...any)
@@ -23,6 +16,7 @@ type Assert interface {
 	Nil(v interface{})
 	Equals(expected interface{}, actual interface{})
 	Equalsf(expected interface{}, actual interface{}, format string, args ...any)
+	Success(err error)
 }
 
 func New(t *testing.T) Assert {
@@ -31,6 +25,13 @@ func New(t *testing.T) Assert {
 
 type assert struct {
 	t *testing.T
+}
+
+func (a *assert) Success(err error) {
+	a.t.Helper()
+	if err != nil {
+		a.t.Error(err)
+	}
 }
 
 func (a *assert) Errorf(format string, args ...any) {
@@ -71,6 +72,10 @@ func (a *assert) Equalsf(expected interface{}, actual interface{}, format string
 	}
 }
 
+type Lister interface {
+	List() []interface{}
+}
+
 func equals(expected interface{}, actual interface{}) string {
 	if expected == nil {
 		if actual == nil {
@@ -94,11 +99,15 @@ func equals(expected interface{}, actual interface{}) string {
 	case reflect.Map:
 		return reflectMapEquals(expected, actual)
 	default:
-		if !reflect.DeepEqual(expected, actual) {
-			return fmt.Sprintf("expected: %v, actual: %v", expected, actual)
+		if cmp.Equal(expected, actual, cmpopts.IgnoreUnexported()) {
+			return ""
 		}
+		if reflect.DeepEqual(expected, actual) {
+			return ""
+		}
+		return fmt.Sprintf("expected: %v, actual: %v", expected, actual)
 	}
-	return ""
+	// return ""
 }
 
 func isNil(v reflect.Value) bool {
@@ -147,7 +156,7 @@ func reflectMapEquals(expected interface{}, actual interface{}) string {
 	for _, k := range vExpected.MapKeys() {
 		ve := vExpected.MapIndex(k)
 		va := vActual.MapIndex(k)
-		if !va.IsZero() {
+		if va.IsValid() && !va.IsZero() {
 			if res := equals(ve.Interface(), va.Interface()); res != "" {
 				return fmt.Sprintf("[\"%v\"] %s", k.Interface(), res)
 			}
@@ -157,7 +166,7 @@ func reflectMapEquals(expected interface{}, actual interface{}) string {
 	}
 	for _, k := range vActual.MapKeys() {
 		ve := vExpected.MapIndex(k)
-		if ve.IsZero() {
+		if !ve.IsValid() || ve.IsZero() {
 			return fmt.Sprintf("[\"%v\"] shouldn't exist", k.Interface())
 		}
 	}
